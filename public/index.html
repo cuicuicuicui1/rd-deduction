@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>研发费用加计扣除辅助软件</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="brand-icon">研</div>
+      <div>
+        <div class="brand-name">研发加计扣除</div>
+        <div class="brand-sub">辅助软件 · 完全免费 · 数据本地</div>
+      </div>
+    </div>
+    <nav id="nav">
+      <a data-tab="dashboard" class="active">概览</a>
+      <a data-tab="company">企业设置</a>
+      <a data-tab="projects">研发项目</a>
+      <a data-tab="staff">人员与工时</a>
+      <a data-tab="expenses">费用归集</a>
+      <a data-tab="assets">共用资源</a>
+      <a data-tab="import">Excel导入</a>
+      <a data-tab="ledger">辅助账</a>
+      <a data-tab="summary">申报汇总</a>
+      <a data-tab="risks">风险自检</a>
+      <a data-tab="checklist">备查清单</a>
+      <a data-tab="policy">政策库</a>
+    </nav>
+    <div class="sidebar-foot">
+      <button id="btnGuide" class="btn btn-sm">操作指引</button>
+      <button id="btnDemo" class="btn btn-sm btn-primary">载入示例数据</button>
+      <button id="btnClear" class="btn btn-sm">清空数据</button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <header id="topbar">
+      <h1 id="pageTitle">概览</h1>
+      <div class="topbar-right">
+        <label>年度 <select id="yearSel"></select></label>
+        <span id="companyBadge" class="badge"></span>
+      </div>
+    </header>
+    <div id="content"></div>
+  </main>
+</div>
+
+<div id="toast"></div>
+<div id="firstrun"></div>
+<script src="app.js"></script>
+</body>
+</html>

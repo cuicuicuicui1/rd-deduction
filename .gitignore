@@ -1,0 +1,14 @@
+node_modules/
+data/
+data_backup_*/
+data_audit_*/
+tmp_ui_data/
+dist/
+.build-tools/
+tmp_*.js
+*.bak*
+*.log
+shot_*.png
+.npm-cache/
+Thumbs.db
+.DS_Store

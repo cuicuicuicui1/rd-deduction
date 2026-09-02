@@ -472,13 +472,138 @@ app.post('/api/timesheets/batch', (req, res) => {
   res.json({ ok, errors, total: arr.length });
 });
 
+// 导入模板 .xlsx 生成(数据表 + 填写说明表),构建时注入 server.js
+async function buildTemplateXlsx(kind, year, staff, projects, months) {
+  const exCode = (projects[0] || {}).code || 'YYYY-RD-01';
+  let headers = [], example = [], noteRows = [], xname = '';
+  const notes = (rows) => { noteRows = rows; };
+  if (kind === 'timesheets') {
+    headers = ['姓名', '部门', '项目编号', ...months, '总工时'];
+    example = ['张三', '研发部', exCode, ...months.map(() => ''), 160];
+    xname = `工时矩阵导入模板_${year}.xlsx`;
+    notes([
+      ['姓名', '必填', '研发人员姓名', '与个税/社保申报名单一致;仅“是否直接研发=是”的人员需要填工时'],
+      ['部门', '选填', '部门名称', ''],
+      ['项目编号', '必填', exCode, '须与「研发项目」页的项目编号一致,不一致的行导入时会报错'],
+      [ '月份列(共12列)', '选填', '当月研发工时数(数字)', months.map(mo => `列 ${mo}:空白=该月未参与此项目`).join('; ') ],
+      ['总工时', '选填', '160', '缺省 160,可按月修改;与各月列不必一致,系统按实际工时比例分摊'],
+    ]);
+  } else if (kind === 'expenses') {
+    headers = ['日期', '项目编号', '类别key', '金额', '摘要', '期间', '分摊方法', '支出类型', '凭证号', '发票号', '付款方式'];
+    example = [`${year}-01-15`, exCode, 'personnel', 50000, '示例:1月研发人员工资', `${year}-01`, 'direct', '费用化', `记-${year}-001`, `FP-${year}-001`, '银行转账'];
+    xname = `费用导入模板_${year}.xlsx`;
+    notes([
+      ['日期', '必填', 'YYYY-MM-DD', '费用发生日期'],
+      ['项目编号', '必填', exCode, `可选值:${projects.map(p => p.code).join('、') || '(请先在「研发项目」页录入项目)'}`],
+      ['类别key', '必填', 'personnel', constants.EXPENSE_CATEGORIES.map(c => `${c.key}=${c.name}`).join('; ')],
+      ['金额', '必填', '数字(元)', '正数'],
+      ['摘要', '必填', '费用用途简述', `摘要命中「${constants.NON_DEDUCTIBLE_KEYWORDS.join('/')}」将被拒绝(不可计入研发费用)`],
+      ['期间', '必填', 'YYYY-MM', '费用归属月份'],
+      ['分摊方法', '选填', 'direct / ratioHours / ratioCustom', 'direct=直接归集;ratioHours=按研发工时比例分摊;ratioCustom=按自定义权重分摊'],
+      ['支出类型', '选填', '费用化 / 资本化', '资本化项目须先在「研发项目」页设为资本化'],
+      ['凭证号 / 发票号 / 付款方式', '选填', '如 记-2026-001 / FP-2026-001 / 银行转账', ''],
+    ]);
+  } else if (kind === 'staff') {
+    headers = ['姓名', '部门', '岗位', '入职日期', '是否直接研发'];
+    example = ['张三', '研发部', '软件工程师', `${year}-03-01`, '是'];
+    xname = `人员导入模板_${year}.xlsx`;
+    notes([
+      ['姓名', '必填', '人员姓名', '与个税/社保申报名单一致'],
+      ['部门', '选填', '部门名称', ''],
+      ['岗位', '选填', '岗位名称', ''],
+      ['入职日期', '必填', 'YYYY-MM-DD', ''],
+      ['是否直接研发', '必填', '是 / 否', '是=直接从事研发活动,计入加计人员人工费用'],
+    ]);
+  } else if (kind === 'projects') {
+    headers = ['项目编号', '项目名称', '研发形式', '成果归属', '活动类型', '开始日期', '结束日期', '状态', '费用化/资本化', '立项审批日期', '有立项决议', '有研发计划书', '备注'];
+    example = [`${year}-RD-01`, '示例:新型控制系统研发', '自主研发', '成果归本企业', '电子信息技术', `${year}-01-01`, `${year}-12-31`, '进行中', 'expense', `${year}-01-15`, '是', '是', ''];
+    xname = `研发项目导入模板_${year}.xlsx`;
+    notes([
+      ['项目编号', '必填', `${year}-RD-01`, '唯一,后续费用/工时按此编号关联'],
+      ['项目名称', '必填', '项目全称', ''],
+      ['研发形式', '必填', '自主研发', constants.PROJECT_FORMS.map(f => f.name).join('; ')],
+      ['成果归属', '选填', '成果归本企业', '成果归客户(受托开发)整项目不得加计'],
+      ['活动类型', '选填', '电子信息技术', '负面活动(常规性升级/售后服务等)不可加计'],
+      ['开始日期 / 结束日期', '必填', 'YYYY-MM-DD', ''],
+      ['状态', '选填', '进行中', ''],
+      ['费用化/资本化', '必填', 'expense / capitalize', 'capitalize=形成无形资产的成本,转入摊销台账'],
+      ['立项审批日期', '选填', 'YYYY-MM-DD', '决议日期应早于第一笔费用发生日'],
+      ['有立项决议 / 有研发计划书', '选填', '是 / 否', '归档备查资料用'],
+      ['备注', '选填', '', ''],
+    ]);
+  } else if (kind === 'specialIncomes') {
+    headers = ['项目编号', '类型', '金额', '日期', '归属期间', '摘要'];
+    example = [exCode, '下脚料销售', 1200, `${year}-03-31`, `${year}-03`, '研发过程产生下脚料销售'];
+    xname = `特殊收入导入模板_${year}.xlsx`;
+    notes([
+      ['项目编号', '必填', exCode, ''],
+      ['类型', '必填', '下脚料销售', constants.SPECIAL_INCOME_TYPES.map(t => t.name).join(' / ')],
+      ['金额', '必填', '数字(元)', '特殊收入需冲减研发费用加计基数'],
+      ['日期', '必填', 'YYYY-MM-DD', ''],
+      ['归属期间', '必填', 'YYYY-MM', '冲减退回月份'],
+      ['摘要', '选填', '', ''],
+    ]);
+  } else if (kind === 'amortizations') {
+    headers = ['项目编号', '年度', '金额', '形成年度', '备注'];
+    example = [exCode, Number(year), 100000, Number(year) - 1, `资本化项目${year}年摊销`];
+    xname = `资本化摊销导入模板_${year}.xlsx`;
+    notes([
+      ['项目编号', '必填', exCode, '仅资本化项目需要'],
+      ['年度', '必填', year, '摊销归属年度'],
+      ['金额', '必填', '数字(元)', '本年摊销额(系统按 200% 加计)'],
+      ['形成年度', '选填', String(Number(year) - 1), '无形资产达到预定可使用状态的年度;留空由系统按费用形成年度推断'],
+      ['备注', '选填', '', ''],
+    ]);
+  } else {
+    return null;
+  }
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('填写');
+  ws.addRow(headers);
+  ws.addRow(example);
+  const hr = ws.getRow(1);
+  hr.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  hr.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+  hr.alignment = { vertical: 'middle', horizontal: 'center' };
+  ws.getRow(2).font = { color: { argb: 'FF6B7280' } };
+  ws.getRow(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+  ws.views = [{ state: 'frozen', ySplit: 1 }];
+  headers.forEach((h, i) => {
+    ws.getColumn(i + 1).width = i === 0 ? 16 : i === 1 ? 24 : (String(h).length <= 7 ? 11 : Math.max(12, Math.min(24, String(h).length + 6)));
+  });
+  const ns = wb.addWorksheet('填写说明');
+  ns.addRow(['提示:数据表第 2 行(灰色)为示例,填写前请先删除该行,再从第 3 行开始填写;若保留,导入时会被当作真实数据']);
+  ns.mergeCells('A1:D1');
+  ns.getCell('A1').font = { bold: true, color: { argb: 'FFB91C1C' } };
+  ns.addRow(['列名', '是否必填', '格式/示例', '说明']);
+  const nh = ns.getRow(2);
+  nh.font = { bold: true };
+  nh.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
+  noteRows.forEach(r => ns.addRow(r));
+  ns.getColumn(1).width = 16;
+  ns.getColumn(2).width = 10;
+  ns.getColumn(3).width = 30;
+  ns.getColumn(4).width = 60;
+  const buf = await wb.xlsx.writeBuffer();
+  return { buf, fname: xname };
+}
+
 // ---------- 导入模板下载(方案3:模板按钮) ----------
 // timesheets: 人员×项目×12月 矩阵(TSV,Excel 直填直贴);expenses: 11列 CSV;staff: 5列 CSV
-app.get('/api/template/:kind', (req, res) => {
+app.get('/api/template/:kind', async (req, res) => {
   const year = req.query.year || String(new Date().getFullYear());
   const staff = storage.loadAll('staff');
   const projects = storage.loadAll('projects');
   const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+
+
+  if (req.query.format === 'xlsx') {
+    const xt = await buildTemplateXlsx(req.params.kind, year, staff, projects, months);
+    if (!xt) return res.status(404).json({ error: '模板类型不存在:timesheets/expenses/staff/projects/specialIncomes/amortizations' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(xt.fname)}`);
+    return res.send(Buffer.from(xt.buf));
+  }
   let body = '', fname = '';
   if (req.params.kind === 'timesheets') {
     const rows = [];

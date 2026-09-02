@@ -110,18 +110,18 @@ function enhanceDates(root) {
 }
 
 /* 模板下载按钮:fetch 取内容 → Blob 下载(不依赖新标签页,失败有提示) */
-function bindTemplateDownload(btnId, kind) {
+function bindTemplateDownload(btnId, kind, fmt) {
   const btn = $('#' + btnId); // 注意:id 需加 # 前缀,否则 querySelector 按标签名查找会落空
   if (!btn) return;
   btn.onclick = async () => {
     btn.disabled = true; btn.dataset.orig = btn.textContent; btn.textContent = '下载中…';
     try {
-      const res = await fetch(`/api/template/${kind}?year=${state.year}`);
+      const res = await fetch(`/api/template/${kind}?year=${state.year}${fmt ? '&format=xlsx' : ''}`);
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `下载失败(HTTP ${res.status})`); }
       const blob = await res.blob();
       const cd = res.headers.get('Content-Disposition') || '';
       const m = /filename\*=UTF-8''([^;]+)/.exec(cd);
-      const fname = m ? decodeURIComponent(m[1]) : (kind + '模板.csv');
+      const fname = m ? decodeURIComponent(m[1]) : (kind + (fmt ? '模板.xlsx' : '模板.csv'));
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = fname;
@@ -1837,8 +1837,8 @@ async function renderImport() {
           <div class="imp-ents">${entCards}</div>
           ${impState.entity !== 'invoices' ? `
           <div class="flex" style="margin-bottom:10px;gap:8px;align-items:center">
-            <button class="btn" id="impTmplBtn">下载 ${ent.label} 导入模板</button>
-            <span class="muted" style="font-size:12px">用 Excel 打开模板,按表头填写后存为 .xlsx 或 .csv,再上传导入</span>
+            <button class="btn" id="impTmplBtn">下载 ${ent.label} 模板(.xlsx)</button>
+            <span class="muted" style="font-size:12px">Excel 模板含「填写说明」工作表;填好数据后直接拖入上方虚线框,系统按表头自动匹配</span>
           </div>` : '<div class="imp-hint" style="margin-bottom:10px">无需模板:数电票按「发票文件直接上传」即可,本页不支持 CSV 导入。</div>'}
           <div class="dropzone" id="dropzone">
             <div class="dz-t">点击选择文件,或将文件拖到这里</div>
@@ -1881,7 +1881,7 @@ async function bindImport() {
   $$('#content input[name="impEntity"]').forEach(r => r.onchange = entChange);
 
   // 导入页模板下载:按所选实体类型下载对应模板
-  if ($('#impTmplBtn') && impState.entity !== 'invoices') bindTemplateDownload('impTmplBtn', impState.entity);
+  if ($('#impTmplBtn') && impState.entity !== 'invoices') bindTemplateDownload('impTmplBtn', impState.entity, 'xlsx');
 
   const dz = $('#dropzone'), file = $('#impFile');
   if (dz && file) {
